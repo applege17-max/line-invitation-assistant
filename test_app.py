@@ -126,5 +126,29 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual([b["body"]["contents"][0]["text"] for b in bubbles], ["品牌 A", "品牌 B"])
 
 
+class NoonWindowTests(unittest.TestCase):
+    @patch("invitations.gmail_client")
+    @patch("invitations.time.time", return_value=1790740800)
+    def test_taipei_noon_window_uses_epoch_not_server_timezone(self, clock, client):
+        # 2026-09-30 12:00:00 in Asia/Taipei.
+        import invitations
+        client.return_value.return_value = {"messages": []}
+        result = invitations.unread_cards()
+        from urllib.parse import parse_qs
+        query = parse_qs(client.return_value.call_args.args[0].split("?", 1)[1])["q"][0]
+        self.assertIn("after:1790740799", query)
+        self.assertIn("before:1790740801", query)
+        self.assertIn("is:unread", query)
+        self.assertIn("12:00", result[0]["text"])
+
+    @patch("invitations.gmail_client")
+    @patch("invitations.time.time", return_value=1790740799)
+    def test_before_noon_does_not_search_yesterday(self, clock, client):
+        import invitations
+        result = invitations.unread_cards()
+        client.assert_not_called()
+        self.assertIn("尚未", result[0]["text"])
+
+
 if __name__ == "__main__":
     unittest.main()

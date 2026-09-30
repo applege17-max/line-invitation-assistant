@@ -12,7 +12,7 @@ Render Python Web Service，免費方案，Singapore 區域。
 - 環境變數：`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`、`LINE_USER_ID`、`NOTIFY_API_KEY`
 - LINE Developers Webhook URL: `https://服務網址/webhook`，驗證後開啟 Use webhook。
 
-機器人只回覆指定使用者的一對一訊息，驗證 LINE 原始請求的 HMAC 簽章。支援「ping」「狀態」「測試」及「業配／未讀邀約／新邀約」。業配查詢列出最近最多 20 個未讀邀約討論串，從原文擷取資料，未提供的欄位標示未提供；不標記已讀。其他文字回覆使用說明。
+機器人只回覆指定使用者的一對一訊息，驗證 LINE 原始請求的 HMAC 簽章。支援「ping」「狀態」「測試」及「業配／未讀邀約／新邀約」。業配查詢只列台灣時間當天中午 12:00 至查詢當下的新未讀邀約，最多 20 個討論串；中午前提示時段尚未開始，從原文擷取資料，未提供的欄位標示未提供；不標記已讀。其他文字回覆使用說明。
 
 ## 推播
 
@@ -44,8 +44,10 @@ API key、LINE token、Google OAuth JSON 不能提交 Git。服務不記錄訊�
 
 `POST /api/invitations` 使用同一 Bearer API key，JSON 欄位 `invitations` 為陣列。每件需要 `thread_id`、`category`、`brand`、`summary`、`placement`、`schedule`、`authorization`。六個類別按固定順序呈現，摘要自動帶入品牌名稱。
 
-三個按鈕為「幫我婉拒」「可以報價」「公關品可收」，透過簽名 postback 套用同名 Gmail 標籤。成功不回覆，只有失敗通知。不發送 Email，不移除既有標籤。
+三個按鈕為「幫我婉拒」「可以報價」「公關品可收」，透過簽名 postback 套用同名 Gmail 標籤。逐張成功不回覆，整批完成回覆「全部已完成」；最後一次成功分類後 60 秒未完成，回覆成功與未回覆件數；失敗即時通知。不發送 Email，不移除既有標籤。
 
 分類另需環境變數 `GMAIL_ACCOUNT_EMAIL` 和 `GMAIL_CREDENTIALS_JSON`，後者為專用 Gmail modify OAuth JSON，含 account_email、client_id、client_secret、refresh_token。不可放在 GitHub。
 
 圖卡底色 #FFBDD9，標題與連結 #4D3440，欄位標題 #654455，內文 #222837；分類按鈕白底深色字。同類別的不同品牌各自一張卡，依類別排序後左右滑動。
+
+整批進度以 SQLite 記錄唯一討論串，重複點擊不重複計數，LINE 推播用固定 retry key 重試。Render 免費服務的本機檔案會在重新部署時重設；重新部署前收到的圖卡進度可能遺失。既有未帶整批識別碼的舊圖卡維持逐張成功靜默，新圖卡才追蹤整批。

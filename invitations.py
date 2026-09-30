@@ -6,9 +6,12 @@ import json
 import os
 import re
 import time
+import uuid
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from html import unescape
 
 CATEGORIES = ["付費影音", "團購", "公關品", "旅遊服務體驗", "活動／影片／實體邀請", "長期創作者合作"]
@@ -16,11 +19,15 @@ LABELS = {"decline": "幫我婉拒", "quote": "可以報價", "gift": "公關品
 CARD_COLOR = "#FFBDD9"  # Approximate screen conversion of C0 M26 Y15 K0.
 
 
-def action_data(thread_id, action):
+def action_data(thread_id, action, batch=None, total=None):
     expires = str(int(time.time()) + 90 * 86400)
     data = f"{thread_id}:{action}:{expires}"
-    signature = hmac.new(os.environ["NOTIFY_API_KEY"].encode(), data.encode(), hashlib.sha256).hexdigest()[:32]
-    return urllib.parse.urlencode({"t": thread_id, "a": action, "e": expires, "s": signature})
+    fields = {"t": thread_id, "a": action, "e": expires}
+    if batch is not None:
+        data += f":{batch}:{total}"
+        fields.update({"b": batch, "n": str(total)})
+    fields["s"] = hmac.new(os.environ["NOTIFY_API_KEY"].encode(), data.encode(), hashlib.sha256).hexdigest()[:32]
+    return urllib.parse.urlencode(fields)
 
 
 def verify_action(data):
@@ -30,7 +37,13 @@ def verify_action(data):
         raise ValueError("invalid action")
     if int(expires) < time.time():
         raise ValueError("expired action")
-    expected = hmac.new(os.environ["NOTIFY_API_KEY"].encode(), f"{thread_id}:{action}:{expires}".encode(), hashlib.sha256).hexdigest()[:32]
+    signed = f"{thread_id}:{action}:{expires}"
+    if "b" in fields or "n" in fields:
+        batch, total = fields["b"][0], fields["n"][0]
+        if not re.fullmatch(r"[0-9a-f]{32}", batch) or not 1 <= int(total) <= 50:
+            raise ValueError("invalid batch")
+        signed += f":{batch}:{total}"
+    expected = hmac.new(os.environ["NOTIFY_API_KEY"].encode(), signed.encode(), hashlib.sha256).hexdigest()[:32]
     if not hmac.compare_digest(signature, expected):
         raise ValueError("invalid signature")
     return thread_id, LABELS[action]
@@ -45,6 +58,8 @@ def field(label, value):
 def cards(items):
     if not isinstance(items, list) or not 1 <= len(items) <= 50:
         raise ValueError("Provide 1 to 50 invitations")
+    batch = uuid.uuid4().hex
+    total = len({item.get("thread_id") for item in items if isinstance(item, dict)})
     bubbles = []
     for item in items:
         if not isinstance(item, dict) or item.get("category") not in CATEGORIES:
@@ -66,7 +81,7 @@ def cards(items):
                 field("授權需求", item["authorization"])]},
             "footer": {"type": "box", "layout": "vertical", "spacing": "sm", "backgroundColor": CARD_COLOR, "contents": [
                 {"type": "button", "height": "sm", "style": "secondary", "color": "#FFFFFF", "action": {
-                    "type": "postback", "label": label, "data": action_data(thread_id, action)}}
+                    "type": "postback", "label": label, "data": action_data(thread_id, action, batch, total)}}
                 for action, label in LABELS.items()] + [
                 {"type": "button", "height": "sm", "style": "link", "color": "#4D3440", "action": {"type": "uri", "label": "查看原信",
                     "uri": "https://mail.google.com/mail/u/?authuser=" + urllib.parse.quote(os.environ.get("GMAIL_ACCOUNT_EMAIL", ""), safe="") + "#all/" + thread_id}}]}}))
@@ -165,8 +180,13 @@ def extracted_card(message):
 
 
 def unread_cards():
+    now = datetime.fromtimestamp(time.time(), ZoneInfo("Asia/Taipei"))
+    noon = now.replace(hour=12, minute=0, second=0, microsecond=0)
+    if now < noon:
+        return [{"type": "text", "text": "今日邀約查詢從中午 12:00 開始，目前尚未到查詢時段。"}]
     gmail = gmail_client()
     query = 'is:unread -in:sent -in:drafts -in:trash -in:spam (邀約 OR 合作邀請 OR collaboration OR sponsorship OR gifting OR invitation OR 媒體試片 OR 敬邀 OR 團購)'
+    query += f' after:{int(noon.timestamp()) - 1} before:{int(now.timestamp()) + 1}'
     try:
         listing = gmail("messages?" + urllib.parse.urlencode({"q": query, "maxResults": 50}))
         candidates, seen = [], set()
@@ -176,11 +196,11 @@ def unread_cards():
                 seen.add(entry["threadId"])
         selected = candidates[:20]
         if not selected:
-            return [{"type": "text", "text": "目前沒有符合邀約搜尋條件的未讀信件。"}]
+            return [{"type": "text", "text": "今天中午 12:00 至今，沒有符合邀約搜尋條件的新未讀信件。"}]
         with ThreadPoolExecutor(max_workers=6) as pool:
             messages = list(pool.map(lambda entry: gmail("messages/" + entry["id"] + "?format=full"), selected))
         items = [extracted_card(message) for message in messages]
-        note = f"未讀邀約｜本次列出 {len(items)} 件。\n以下為信件原文擷取，品牌或條件未明示時會標成待確認。"
+        note = f"今日 12:00 至今的未讀邀約｜本次列出 {len(items)} 件。\n以下為信件原文擷取，品牌或條件未明示時會標成待確認。"
         if listing.get("nextPageToken") or len(candidates) > 20:
             note += "\n尚有較早的未讀信件；本次先列最近 20 件。"
         return [{"type": "text", "text": note}] + cards(items)

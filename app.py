@@ -10,13 +10,15 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import urllib.parse
+from progress import ProgressTracker
 from collections import OrderedDict
 from invitations import cards, verify_action, apply_label, unread_cards
 
 LOG = logging.getLogger("line-notifier")
 MAX_BODY = 128 * 1024
 REQUIRED = ("LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_USER_ID", "NOTIFY_API_KEY")
-HELP = "Apple 的 LINE 通知已連線 ✅\n輸入「業配」可查看工作信箱的未讀邀約。\n輸入「狀態」或「ping」可測試連線。\n圖卡按鈕可套用 Gmail 標籤；成功不傳訊息，只有失敗才通知。"
+HELP = "Apple 的 LINE 通知已連線 ✅\n輸入「業配」可查看工作信箱的未讀邀約。\n輸入「狀態」或「ping」可測試連線。\n圖卡按鈕可套用 Gmail 標籤；逐張成功不通知；全部完成或停操作一分鐘後會回報整批進度。"
 
 
 def line_call(endpoint, payload, retry_key=None):
@@ -63,6 +65,7 @@ class NotificationApp:
     def __init__(self):
         self.seen = OrderedDict()
         self.lock = threading.Lock()
+        self.progress = None
 
     def response(self, start_response, status, data):
         body = json.dumps(data, ensure_ascii=False).encode()
@@ -138,7 +141,14 @@ class NotificationApp:
             try:
                 thread_id, label = verify_action(event.get("postback", {}).get("data", ""))
                 apply_label(thread_id, label)
-                return  # Successful classification sends no LINE reply.
+                fields = urllib.parse.parse_qs(event.get("postback", {}).get("data", ""))
+                if "b" in fields:
+                    with self.lock:
+                        if self.progress is None:
+                            self.progress = ProgressTracker(os.environ.get("PROGRESS_DB_PATH", "/tmp/line-invitation-progress.sqlite3"),
+                                lambda text, key: line_call("push", {"to": os.environ["LINE_USER_ID"], "messages": text_messages(text)}, key))
+                    self.progress.record(fields["b"][0], int(fields["n"][0]), thread_id)
+                return  # No per-card success reply; tracker sends only batch summaries.
             except (ValueError, KeyError, TypeError):
                 text = "分類失敗：這張圖卡已過期或按鈕資料無效，請重新取得圖卡。"
             except RuntimeError as error:
@@ -175,6 +185,10 @@ class NotificationApp:
 
 
 app = NotificationApp()
+if all(os.environ.get(key) for key in REQUIRED):
+    app.progress = ProgressTracker(os.environ.get("PROGRESS_DB_PATH", "/tmp/line-invitation-progress.sqlite3"),
+        lambda text, key: line_call("push", {"to": os.environ["LINE_USER_ID"], "messages": text_messages(text)}, key))
+    app.progress.start()  # Recover pending deadlines after a process restart on the same filesystem.
 
 if __name__ == "__main__":
     from wsgiref.simple_server import make_server
