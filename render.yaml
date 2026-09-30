@@ -18,3 +18,7 @@ services:
         sync: false
       - key: NOTIFY_API_KEY
         sync: false
+      - key: GMAIL_ACCOUNT_EMAIL
+        sync: false
+      - key: GMAIL_CREDENTIALS_JSON
+        sync: false

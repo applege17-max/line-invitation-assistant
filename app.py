@@ -11,12 +11,12 @@ import urllib.error
 import urllib.request
 import uuid
 from collections import OrderedDict
-from invitations import cards, verify_action, apply_label
+from invitations import cards, verify_action, apply_label, unread_cards
 
 LOG = logging.getLogger("line-notifier")
 MAX_BODY = 128 * 1024
 REQUIRED = ("LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_USER_ID", "NOTIFY_API_KEY")
-HELP = "Apple 的 LINE 通知已連線 ✅\n之後可接收工作邀約整理與待辦通知。\n輸入「狀態」或「ping」可測試連線。\n這裡目前只提供通知與連線測試，尚未自動讀取信箱或回覆邀約。"
+HELP = "Apple 的 LINE 通知已連線 ✅\n輸入「業配」可查看工作信箱的未讀邀約。\n輸入「狀態」或「ping」可測試連線。\n圖卡按鈕可套用 Gmail 標籤；成功不傳訊息，只有失敗才通知。"
 
 
 def line_call(endpoint, payload, retry_key=None):
@@ -133,6 +133,7 @@ class NotificationApp:
         if not token:
             return
         message = event.get("message") or {}
+        response_messages = None
         if event.get("type") == "postback":
             try:
                 thread_id, label = verify_action(event.get("postback", {}).get("data", ""))
@@ -146,7 +147,14 @@ class NotificationApp:
             text = HELP
         elif event.get("type") == "message" and message.get("type") == "text":
             command = message.get("text", "").strip().lower()
-            text = "連線正常 ✅\nApple 的 LINE 通知機器人正在運作。" if command in ("ping", "狀態", "測試") else HELP
+            if command in ("業配", "未讀邀約", "新邀約"):
+                try:
+                    response_messages = unread_cards()
+                    text = ""
+                except RuntimeError as error:
+                    text = "查詢失敗：" + str(error)
+            else:
+                text = "連線正常 ✅\nApple 的 LINE 通知機器人正在運作。" if command in ("ping", "狀態", "測試") else HELP
         else:
             return
         event_id = event.get("webhookEventId") or token
@@ -159,7 +167,7 @@ class NotificationApp:
                 return
             self.seen[event_id] = now
         try:
-            line_call("reply", {"replyToken": token, "messages": text_messages(text)})
+            line_call("reply", {"replyToken": token, "messages": response_messages or text_messages(text)})
         except RuntimeError:
             with self.lock:
                 self.seen.pop(event_id, None)

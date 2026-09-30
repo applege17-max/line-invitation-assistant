@@ -100,12 +100,30 @@ class BridgeTests(unittest.TestCase):
         result = cards([item, {**item, "category": "付費影音"}])
         bubble = result[0]["contents"]["contents"][0]
         self.assertEqual(bubble["header"]["contents"][0]["text"], "付費影音")
+        self.assertEqual(bubble["body"]["backgroundColor"], "#FFBDD9")
         self.assertEqual([b["action"]["label"] for b in bubble["footer"]["contents"][:3]],
                          ["幫我婉拒", "可以報價", "公關品可收"])
         data = bubble["footer"]["contents"][0]["action"]["data"]
         self.assertEqual(verify_action(data)[1], "幫我婉拒")
         with self.assertRaises(ValueError):
             verify_action(data.replace("decline", "quote"))
+
+    @patch("app.line_call", return_value="test-request")
+    @patch("app.unread_cards", return_value=[{"type": "text", "text": "未讀邀約"}])
+    def test_owner_can_query_unread_invitations(self, unread, send):
+        data = {"events": [{"webhookEventId": "query1", "type": "message", "replyToken": "r",
+                            "source": {"type": "user", "userId": "Uowner"}, "message": {"type": "text", "text": "業配"}}]}
+        self.assertEqual(self.call("/webhook", data, HTTP_X_LINE_SIGNATURE=self.signed(data))[0], "200 OK")
+        unread.assert_called_once()
+        self.assertEqual(send.call_args.args[1]["messages"][0]["text"], "未讀邀約")
+
+    def test_two_brands_in_same_category_make_two_cards(self):
+        from invitations import cards
+        item = {"thread_id": "1a0e8e45ba3e76d2", "brand": "品牌 A", "summary": "產品 A", "placement": "IG",
+                "schedule": "未提供", "authorization": "未提供", "category": "付費影音"}
+        bubbles = cards([item, {**item, "brand": "品牌 B", "summary": "產品 B", "thread_id": "1a0cc290cb4378bc"}])[0]["contents"]["contents"]
+        self.assertEqual(len(bubbles), 2)
+        self.assertEqual([b["body"]["contents"][0]["text"] for b in bubbles], ["品牌 A", "品牌 B"])
 
 
 if __name__ == "__main__":
