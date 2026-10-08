@@ -101,8 +101,8 @@ class BridgeTests(unittest.TestCase):
         bubble = result[0]["contents"]["contents"][0]
         self.assertEqual(bubble["header"]["contents"][0]["text"], "付費影音")
         self.assertEqual(bubble["body"]["backgroundColor"], "#FFBDD9")
-        self.assertEqual([b["action"]["label"] for b in bubble["footer"]["contents"][:3]],
-                         ["幫我婉拒", "可以報價", "公關品可收"])
+        self.assertEqual([b["action"]["label"] for b in bubble["footer"]["contents"][:5]],
+                         ["幫我婉拒", "可以報價", "公關品可收", "可以合作", "團購可試用"])
         data = bubble["footer"]["contents"][0]["action"]["data"]
         self.assertEqual(verify_action(data)[1], "幫我婉拒")
         with self.assertRaises(ValueError):

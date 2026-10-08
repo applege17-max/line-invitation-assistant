@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from html import unescape
 
 CATEGORIES = ["付費影音", "團購", "公關品", "旅遊服務體驗", "活動／影片／實體邀請", "長期創作者合作"]
-LABELS = {"decline": "幫我婉拒", "quote": "可以報價", "gift": "公關品可收"}
+LABELS = {"decline": "幫我婉拒", "quote": "可以報價", "gift": "公關品可收", "cooperate": "可以合作", "group_try": "團購可試用"}
 CARD_COLOR = "#FFBDD9"  # Approximate screen conversion of C0 M26 Y15 K0.
 
 

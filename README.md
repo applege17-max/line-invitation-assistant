@@ -44,7 +44,7 @@ API key、LINE token、Google OAuth JSON 不能提交 Git。服務不記錄訊�
 
 `POST /api/invitations` 使用同一 Bearer API key，JSON 欄位 `invitations` 為陣列。每件需要 `thread_id`、`category`、`brand`、`summary`、`placement`、`schedule`、`authorization`。六個類別按固定順序呈現，摘要自動帶入品牌名稱。
 
-三個按鈕為「幫我婉拒」「可以報價」「公關品可收」，透過簽名 postback 套用同名 Gmail 標籤。逐張成功不回覆，整批完成回覆「全部已完成」；最後一次成功分類後 60 秒未完成，回覆成功與未回覆件數；失敗即時通知。不發送 Email，不移除既有標籤。
+五個分類按鈕為「幫我婉拒」「可以報價」「公關品可收」「可以合作」「團購可試用」，透過簽名 postback 套用同名 Gmail 標籤。逐張成功不回覆，整批完成回覆「全部已完成」；最後一次成功分類後 60 秒未完成，回覆成功與未回覆件數；失敗即時通知。不發送 Email，不移除既有標籤。
 
 分類另需環境變數 `GMAIL_ACCOUNT_EMAIL` 和 `GMAIL_CREDENTIALS_JSON`，後者為專用 Gmail modify OAuth JSON，含 account_email、client_id、client_secret、refresh_token。不可放在 GitHub。
 
