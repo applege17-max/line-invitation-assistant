@@ -83,11 +83,33 @@ def cards(items):
                 {"type": "button", "height": "sm", "style": "secondary", "color": "#FFFFFF", "action": {
                     "type": "postback", "label": label, "data": action_data(thread_id, action, batch, total)}}
                 for action, label in LABELS.items()] + [
-                {"type": "button", "height": "sm", "style": "link", "color": "#4D3440", "action": {"type": "uri", "label": "查看原信",
-                    "uri": "https://mail.google.com/mail/u/?authuser=" + urllib.parse.quote(os.environ.get("GMAIL_ACCOUNT_EMAIL", ""), safe="") + "#all/" + thread_id}}]}}))
+                {"type": "button", "height": "sm", "style": "link", "color": "#4D3440", "action": {
+                    "type": "uri", "label": "開啟 Gmail App",
+                    "uri": "https://apple-line-notifier.onrender.com/open-gmail"}}] + ([
+                {"type": "button", "height": "sm", "style": "link", "color": "#4D3440", "action": {
+                    "type": "clipboard", "label": "複製原信搜尋碼", "clipboardText": item["original_search"]}}
+                ] if item.get("original_search") else [])}}))
     ordered = [bubble for _, bubble in sorted(bubbles, key=lambda entry: entry[0])]
     return [{"type": "flex", "altText": f"新工作邀約｜共 {len(items)} 件", "contents": {
         "type": "carousel", "contents": ordered[i:i+10]}} for i in range(0, len(ordered), 10)]
+
+
+def add_original_search(items):
+    if not isinstance(items, list):
+        raise ValueError("invalid invitations")
+    gmail = gmail_client()
+    for item in items:
+        thread_id = item.get("thread_id", "")
+        if not re.fullmatch(r"[0-9a-f]{10,32}", thread_id):
+            raise ValueError("invalid thread id")
+        thread = gmail("threads/" + thread_id + "?format=metadata&metadataHeaders=Message-ID")
+        message = thread.get("messages", [])[0]
+        headers = {h["name"].lower(): h["value"] for h in message.get("payload", {}).get("headers", [])}
+        message_id = headers.get("message-id", "").strip().strip("<>")
+        if not message_id or len(message_id) > 800 or any(c.isspace() for c in message_id):
+            raise RuntimeError("原信缺少有效 Message-ID，無法建立精準搜尋碼")
+        item["original_search"] = "in:anywhere rfc822msgid:" + message_id
+    return items
 
 
 def gmail_client():
@@ -172,7 +194,7 @@ def extracted_card(message):
     def select(pattern, fallback):
         found = [line for line in lines if re.search(pattern, line, flags=re.I)]
         return "；".join(found[:3])[:380] or fallback
-    return {"thread_id": message["threadId"], "category": category, "brand": brand[:100],
+    return {"original_search": "in:anywhere rfc822msgid:" + headers.get("message-id", "").strip().strip("<>"), "thread_id": message["threadId"], "category": category, "brand": brand[:100],
         "summary": select(r"合作產品|推廣產品|合作商品|主打|產品名稱|商品名稱", subject)[:350],
         "placement": select(r"reels|youtube|\byt\b|threads|tiktok|限動|限時動態|影片置入|合作形式|合作方式", "未提供明確版位，待確認。"),
         "schedule": select(r"(?:上線|曝光|開團|交稿|合作檔期|活動時間|時間：|時間:).*(?:\d|月底|月初)|\d{1,2}[月/]\d{1,2}", "未提供，待確認。"),

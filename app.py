@@ -13,7 +13,7 @@ import uuid
 import urllib.parse
 from progress import ProgressTracker
 from collections import OrderedDict
-from invitations import cards, verify_action, apply_label, unread_cards
+from invitations import cards, verify_action, apply_label, unread_cards, add_original_search
 
 LOG = logging.getLogger("line-notifier")
 MAX_BODY = 128 * 1024
@@ -76,6 +76,10 @@ class NotificationApp:
 
     def __call__(self, env, start_response):
         path, method = env.get("PATH_INFO", "/"), env.get("REQUEST_METHOD", "GET")
+        if path == "/open-gmail" and method == "GET":
+            body = """<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>開啟 Gmail App</title><style>body{background:#FFBDD9;color:#4D3440;font:18px system-ui;max-width:480px;margin:60px auto;padding:24px}a{display:block;background:white;color:#4D3440;padding:18px;border-radius:12px;text-align:center;text-decoration:none}</style><h1>在 Gmail 查看原信</h1><p>先在 LINE 圖卡點「複製原信搜尋碼」。</p><a href="googlegmail:///">開啟 Gmail App</a><p>切換到工作信箱，在上方搜尋欄貼上搜尋碼，再搜尋即可找到原信。</p><p>若沒有開啟，請手動切換 Gmail App。此頁不顯示信件內容。</p></html>""".encode()
+            start_response("200 OK", [("Content-Type", "text/html; charset=utf-8"), ("Content-Length", str(len(body))), ("Cache-Control", "no-store"), ("Referrer-Policy", "no-referrer")])
+            return [body]
         if path in ("/", "/healthz") and method == "GET":
             ready = all(os.environ.get(key) for key in REQUIRED)
             return self.response(start_response, "200 OK" if ready else "503 Service Unavailable",
@@ -107,7 +111,7 @@ class NotificationApp:
             if not isinstance(payload, dict):
                 raise ValueError("JSON object required")
             if path.startswith("/api/"):
-                messages = cards(payload.get("invitations")) if path == "/api/invitations" else text_messages(payload.get("text"))
+                messages = cards(add_original_search(payload.get("invitations"))) if path == "/api/invitations" else text_messages(payload.get("text"))
                 # Recipient cannot be supplied by callers: always Apple's configured ID.
                 retry_key = env.get("HTTP_X_LINE_RETRY_KEY") or str(uuid.uuid4())
                 try:

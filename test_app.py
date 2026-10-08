@@ -152,3 +152,20 @@ class NoonWindowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OriginalMailTests(unittest.TestCase):
+    @patch("invitations.gmail_client")
+    def test_search_uses_rfc_message_id_and_finds_archived_mail(self, client):
+        import invitations
+        client.return_value.return_value = {"messages":[{"payload":{"headers":[{"name":"Message-ID","value":"<unique@example.test>"}]}}]}
+        result = invitations.add_original_search([{"thread_id":"1a0e8e45ba3e76d2"}])
+        self.assertEqual(result[0]["original_search"], "in:anywhere rfc822msgid:unique@example.test")
+
+    def test_app_launch_page_contains_no_mail_or_credentials(self):
+        application = app.NotificationApp()
+        status=[]
+        body=b"".join(application({"PATH_INFO":"/open-gmail","REQUEST_METHOD":"GET"},lambda s,h:status.append(s)))
+        self.assertEqual(status,["200 OK"])
+        self.assertIn(b"googlegmail:///",body)
+        self.assertNotIn(b"mail.google.com",body)
